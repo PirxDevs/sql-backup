@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Copyright (C) 2007 Pirx Developers - https://pirx.dev/
+
+BACKUP_DIR="/mnt/backup"
+BACKUP_DATE=`date +"%Y%m%d"`
+KEEP_DAYS="30"
+
+find $BACKUP_DIR/mysql -mindepth 1 -type d -mtime +$KEEP_DAYS -exec rm -rf {} \;
+find $BACKUP_DIR/pgsql -mindepth 1 -type d -mtime +$KEEP_DAYS -exec rm -rf {} \;
+
+echo "Dumping MySQL databases:"
+MYSQL_DBS=`mysql -u mysql --password=mysqlpassword -e "show databases;" | grep -v "Database"`
+BACKUP_PATH="$BACKUP_DIR/mysql/$BACKUP_DATE"
+mkdir $BACKUP_PATH
+for db in $MYSQL_DBS; do
+  echo "  $db -> $BACKUP_PATH/$db.gz"
+  mysqldump -u root --password=mysqlpassword -c --hex-blob $db | gzip > $BACKUP_PATH/$db.gz
+done
+
+echo "Dumping PostgreSQL databases:"
+export PGUSER="postgres"
+export PGPASSWORD="postgresqlpassword"
+PGSQL_DBS=`psql -q -t -c "select datname from pg_database;" template1 | grep -v "template0" | sort`
+BACKUP_PATH="$BACKUP_DIR/pgsql/$BACKUP_DATE"
+mkdir $BACKUP_PATH
+pg_dumpall -o -s | gzip > $BACKUP_PATH/SCHEMAS.gz
+for db in $PGSQL_DBS; do
+  echo "  $db -> $BACKUP_PATH/$db.gz"
+  pg_dump -a -b -Ft -d $db |gzip > $BACKUP_PATH/$db.tar.gz
+done
