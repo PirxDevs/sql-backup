@@ -47,7 +47,11 @@ for entry in `cat $BACKUP_CONF | grep -v "^#" | grep -v "^$"`; do
         if [ "$type" = "pgsql" ]; then
 	    pg_dump -b -Ft $db | gzip > $BACKUP_PATH/$db.tar.gz
         elif [ "$type" = "mysql" ]; then
-	    mysqldump -u root -S /var/run/mysqld/mysqld.sock --password=$pass -c --hex-blob $db | gzip > $BACKUP_PATH/$db.gz
+            if [ "x$db" = "xinformation_schema" ]; then
+	      mysqldump -u root --single-transaction -R -c -E -e --create-options --triggers --hex-blob -S /var/run/mysqld/mysqld.sock --password=$pass $db | gzip > $BACKUP_PATH/$db.gz
+	    else
+	      mysqldump -u root -R -c -E -e --create-options --triggers --hex-blob -S /var/run/mysqld/mysqld.sock --password=$pass $db | gzip > $BACKUP_PATH/$db.gz
+	    fi
 	fi
     done
 done
