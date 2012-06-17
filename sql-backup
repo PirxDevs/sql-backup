@@ -1,62 +1,117 @@
 #!/bin/bash
 
-# Copyright (C) 2007-2010 Pirx Developers - https://pirx.dev/
+# Copyright (C) 2007-2012 Pirx Developers - https://pirx.dev/
 
-BACKUP_CONF="/root/cron/sql-backup.conf"
-BACKUP_DIR="/mnt/backup"
+SCRIPT_DIR="/root/scripts/sql-backup"
+BACKUP_ROOT_DIR="/mnt/backup"
 BACKUP_DATE=`date +"%Y%m%d"`
 
-OLDIFS=$IFS
+OLDIFS=${IFS}
 IFS="
 "
-DATE=`date +"%d.%m.%Y"`
 
-for entry in `cat $BACKUP_CONF | grep -v "^#" | grep -v "^$"`; do
-    type=`echo "$entry" | awk -F ":" '{ print $1}'`
-    socket=`echo "$entry" | awk -F ":" '{ print $2}'`
-    port=`echo "$entry" | awk -F ":" '{ print $3}'`
-    cluster=`echo "$entry" | awk -F ":" '{ print $4}'`
-    pass=`echo "$entry" | awk -F ":" '{ print $5}'`
-    days=`echo "$entry" | awk -F ":" '{ print $6}'`
-    echo `date +"%d-%m-%Y %H:%M:%S"` "Processing $type cluster $cluster"
-    if ! test -d $BACKUP_DIR/$type; then
-	mkdir -p $BACKUP_DIR/$type
+for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; do
+    name=`echo "${entry}" | awk -F ":" '{ print $1}'`
+    type=`echo "${entry}" | awk -F ":" '{ print $2}'`
+    version=`echo "${entry}" | awk -F ":" '{ print $3}'`
+    host=`echo "${entry}" | awk -F ":" '{ print $4}'`
+    port=`echo "${entry}" | awk -F ":" '{ print $5}'`
+    user=`echo "${entry}" | awk -F ":" '{ print $6}'`
+    pass=`echo "${entry}" | awk -F ":" '{ print $7}'`
+    subdir=`echo "${entry}" | awk -F ":" '{ print $8}'`
+    days=`echo "${entry}" | awk -F ":" '{ print $9}'`
+    excludes=`echo "${entry}" | awk -F ":" '{ print $10}'`
+    echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}"
+    if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
+	mkdir -p ${BACKUP_ROOT_DIR}/${subdir}/${name}
     fi
-    if [ "$type" = "pgsql" ]; then
-	export PGUSER="postgres"
-	export PGPASSWORD=$pass
-	db_list=`psql -q -t -h $socket/$cluster -p $port -c "select datname from pg_database;" template1 | grep -v "template0" | sort | sed -e 's/^[ ]*//g'`
-    elif [ "$type" = "mysql" ]; then
-	db_list=`mysql -u mysql -S $socket/$cluster/mysqldb/mysql.sock --password="$pass" -e "show databases;" | grep -v "Database"`
+    if [ "x${type}" = "xpgsql" ]; then
+        echo "  server type: PostgreSQL ${version}"
+	export PGUSER="${user}"
+	export PGPASSWORD="${pass}"
+	/usr/lib64/postgresql/${version}/bin/psql -q -t -h ${host} -p ${port} -c "select datname from pg_database;" template1 2>${SCRIPT_DIR}/${name}.error | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${SCRIPT_DIR}/${name}.dblist
+        if test -s ${SCRIPT_DIR}/${name}.error; then
+	    echo "  error reading list of databases"
+	    cat ${SCRIPT_DIR}/${name}.error
+	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+	    continue
+        fi
+    elif [ "x${type}" = "xmysql" ]; then
+        echo "  server type: MySQL ${version}"
+	export MYSQL_USER="${user}"
+	export MYSQL_PWD="${pass}"
+	mysql -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -v "Database" 1>${SCRIPT_DIR}/${name}.dblist
+        if test -s ${SCRIPT_DIR}/${name}.error; then
+	    echo "  error reading list of databases"
+	    cat ${SCRIPT_DIR}/${name}.error
+	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+	    continue
+        fi
     else
-	echo "skipping, unknown DB type $type"
+	echo "skipping, unknown DB type ${type}"
 	continue
     fi
-    BACKUP_PATH="$BACKUP_DIR/$type/$cluster/$BACKUP_DATE"
-    if ! test -d $BACKUP_PATH; then
-	install -d $BACKUP_PATH
+    rm -f ${SCRIPT_DIR}/${name}.error
+    BACKUP_PATH="${BACKUP_ROOT_DIR}/${subdir}/${name}/${BACKUP_DATE}"
+    if ! test -d ${BACKUP_PATH}; then
+	install -d ${BACKUP_PATH}
     else
-	echo "  skipping, backup for $DATE already exists"
+	echo "  skipping, backup for ${BACKUP_DATE} already exists"
+        rm -f ${SCRIPT_DIR}/${name}.dblist
 	continue
     fi
-    echo "  removing backups older than $days days"
-    find $BACKUP_DIR/$type/$cluster -mindepth 1 -type d -mtime +$days -exec rm -rf {} \; >/dev/null 2>&1
-    if [ "$type" = "pgsql" ]; then
-	echo "  global data -> $BACKUP_PATH/pgsql_globals.gz"
-	pg_dumpall -g -h $socket/$cluster -p $port | gzip > $BACKUP_PATH/pgsql_globals.gz
+    if [ "x${days}" = "x" ];  then
+	days="30"
     fi
-    for db in $db_list; do
-	echo "  $db -> $BACKUP_PATH/$db.gz"
-        if [ "$type" = "pgsql" ]; then
-	    pg_dump -b -Ft -h $socket/$cluster -p $port $db | gzip > $BACKUP_PATH/$db.tar.gz
-        elif [ "$type" = "mysql" ]; then
-            if [ "x$db" = "xinformation_schema" ]; then
-	      mysqldump -u root --single-transaction -R -c -E -e --create-options --triggers --hex-blob -S $socket/$cluster/mysqldb/mysql.sock --password=$pass $db | gzip > $BACKUP_PATH/$db.gz
-	    else
-	      mysqldump -u root -R -c -E -e --create-options --triggers --hex-blob -S $socket/$cluster/mysqldb/mysql.sock --password=$pass $db | gzip > $BACKUP_PATH/$db.gz
+    echo "  removing backups older than ${days} days"
+    find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
+    if [ "${type}" = "pgsql" ]; then
+	echo -n "  global data -> pgsql_globals.gz "
+	/usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz
+	if test -s ${SCRIPT_DIR}/${name}.error.log; then
+	    echo "FAILED"
+	    cat ${SCRIPT_DIR}/${name}.error.log
+        else
+	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz 2>&1 | awk -F" " '{print $1}') bytes)"
+	fi
+    fi
+    db_ok=0
+    db_fail=0
+    for db in $(cat ${SCRIPT_DIR}/${name}.dblist); do
+	if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
+	    if [ "${type}" = "pgsql" ]; then
+		echo -n "  ${db} -> ${db}.dump "
+		/usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log > ${BACKUP_PATH}/${db}.dump
+		if test -s ${SCRIPT_DIR}/${name}.error.log; then
+		    echo "FAILED"
+		    cat ${SCRIPT_DIR}/${name}.error.log
+                    db_fail=$((db_fail + 1))
+    		else
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump 2>&1 | awk -F" " '{print $1}') bytes)"
+                    db_ok=$((db_ok + 1))
+		fi
+    	    elif [ "${type}" = "mysql" ]; then
+		echo -n "  ${db} -> ${db}.gz "
+		mysqldump -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/${db}.gz
+		if test -s ${SCRIPT_DIR}/${name}.error.log; then
+		    echo "FAILED"
+		    cat ${SCRIPT_DIR}/${name}.error.log
+                    db_fail=$((db_fail + 1))
+    		else
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz 2>&1 | awk -F" " '{print $1}') bytes)"
+                    db_ok=$((db_ok + 1))
+		fi
 	    fi
+        else
+	    echo "  ${db} is on exclude list, skipped"
 	fi
     done
+    if [ ${db_fail} -eq 0 ]; then
+	status="OK"
+    else
+	status="FAILED (${db_fail} errors, ${db_ok} ok)"
+    fi
+    rm -f ${SCRIPT_DIR}/${name}.dblist ${SCRIPT_DIR}/${name}.error.log
 done
 
-IFS=$OLDIFS
+IFS=${OLDIFS}
