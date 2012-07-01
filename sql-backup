@@ -21,34 +21,35 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     subdir=`echo "${entry}" | awk -F ":" '{ print $8}'`
     days=`echo "${entry}" | awk -F ":" '{ print $9}'`
     excludes=`echo "${entry}" | awk -F ":" '{ print $10}'`
-    echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}"
+    rm -f ${SCRIPT_DIR}/${name}.log
+    echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}" | tee -a ${SCRIPT_DIR}/${name}.log
     if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
 	mkdir -p ${BACKUP_ROOT_DIR}/${subdir}/${name}
     fi
     if [ "x${type}" = "xpgsql" ]; then
-        echo "  server type: PostgreSQL ${version}"
+        echo "  server type: PostgreSQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
 	export PGUSER="${user}"
 	export PGPASSWORD="${pass}"
 	/usr/lib64/postgresql/${version}/bin/psql -q -t -h ${host} -p ${port} -c "select datname from pg_database;" template1 2>${SCRIPT_DIR}/${name}.error | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${SCRIPT_DIR}/${name}.dblist
         if test -s ${SCRIPT_DIR}/${name}.error; then
-	    echo "  error reading list of databases"
-	    cat ${SCRIPT_DIR}/${name}.error
+	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
+	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
 	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
 	    continue
         fi
     elif [ "x${type}" = "xmysql" ]; then
-        echo "  server type: MySQL ${version}"
+        echo "  server type: MySQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
 	export MYSQL_USER="${user}"
 	export MYSQL_PWD="${pass}"
 	mysql -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -v "Database" 1>${SCRIPT_DIR}/${name}.dblist
         if test -s ${SCRIPT_DIR}/${name}.error; then
-	    echo "  error reading list of databases"
-	    cat ${SCRIPT_DIR}/${name}.error
+	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
+	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
 	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
 	    continue
         fi
     else
-	echo "skipping, unknown DB type ${type}"
+	echo "skipping, unknown DB type ${type}" | tee -a ${SCRIPT_DIR}/${name}.log
 	continue
     fi
     rm -f ${SCRIPT_DIR}/${name}.error
@@ -56,23 +57,23 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     if ! test -d ${BACKUP_PATH}; then
 	install -d ${BACKUP_PATH}
     else
-	echo "  skipping, backup for ${BACKUP_DATE} already exists"
+	echo "  skipping, backup for ${BACKUP_DATE} already exists" | tee -a ${SCRIPT_DIR}/${name}.log
         rm -f ${SCRIPT_DIR}/${name}.dblist
 	continue
     fi
     if [ "x${days}" = "x" ];  then
 	days="30"
     fi
-    echo "  removing backups older than ${days} days"
+    echo "  removing backups older than ${days} days" | tee -a ${SCRIPT_DIR}/${name}.log
     find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
     if [ "${type}" = "pgsql" ]; then
-	echo -n "  global data -> pgsql_globals.gz "
+	echo -n "  global data -> pgsql_globals.gz " | tee -a ${SCRIPT_DIR}/${name}.log
 	/usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz
 	if test -s ${SCRIPT_DIR}/${name}.error.log; then
-	    echo "FAILED"
-	    cat ${SCRIPT_DIR}/${name}.error.log
+	    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+	    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
         else
-	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz 2>&1 | awk -F" " '{print $1}') bytes)"
+	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
 	fi
     fi
     db_ok=0
@@ -80,30 +81,30 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     for db in $(cat ${SCRIPT_DIR}/${name}.dblist); do
 	if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
 	    if [ "${type}" = "pgsql" ]; then
-		echo -n "  ${db} -> ${db}.dump "
+		echo -n "  ${db} -> ${db}.dump " | tee -a ${SCRIPT_DIR}/${name}.log
 		/usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log > ${BACKUP_PATH}/${db}.dump
 		if test -s ${SCRIPT_DIR}/${name}.error.log; then
-		    echo "FAILED"
-		    cat ${SCRIPT_DIR}/${name}.error.log
+		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
                     db_fail=$((db_fail + 1))
     		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump 2>&1 | awk -F" " '{print $1}') bytes)"
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
                     db_ok=$((db_ok + 1))
 		fi
     	    elif [ "${type}" = "mysql" ]; then
-		echo -n "  ${db} -> ${db}.gz "
+		echo -n "  ${db} -> ${db}.gz " | tee -a ${SCRIPT_DIR}/${name}.log
 		mysqldump -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/${db}.gz
 		if test -s ${SCRIPT_DIR}/${name}.error.log; then
-		    echo "FAILED"
-		    cat ${SCRIPT_DIR}/${name}.error.log
+		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
                     db_fail=$((db_fail + 1))
     		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz 2>&1 | awk -F" " '{print $1}') bytes)"
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
                     db_ok=$((db_ok + 1))
 		fi
 	    fi
         else
-	    echo "  ${db} is on exclude list, skipped"
+	    echo "  ${db} is on exclude list, skipped" | tee -a ${SCRIPT_DIR}/${name}.log
 	fi
     done
     if [ ${db_fail} -eq 0 ]; then
