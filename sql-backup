@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2007-2012 Pirx Developers - https://pirx.dev/
+# Copyright (C) 2007-2013 Pirx Developers - https://pirx.dev/
 
 SCRIPT_DIR="/root/scripts/sql-backup"
 BACKUP_ROOT_DIR="/mnt/backup"
@@ -9,6 +9,14 @@ BACKUP_DATE=`date +"%Y%m%d"`
 OLDIFS=${IFS}
 IFS="
 "
+
+send_email () {
+  IFS=$OLDIFS
+  cat "${1}" | /usr/sbin/bsmtp -h mail.server.com -f "SQL Backup <sql-backup@domain.com>" -s "Database backup for ${2}" $(echo "${3}" | sed -e 's/\s//g; s/,/ /g;')
+  rm -f "${1}"
+  IFS="
+"
+}
 
 for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; do
     name=`echo "${entry}" | awk -F ":" '{ print $1}'`
@@ -21,6 +29,7 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     subdir=`echo "${entry}" | awk -F ":" '{ print $8}'`
     days=`echo "${entry}" | awk -F ":" '{ print $9}'`
     excludes=`echo "${entry}" | awk -F ":" '{ print $10}'`
+    notify=`echo "${entry}" | awk -F ":" '{ print $11}'`
     rm -f ${SCRIPT_DIR}/${name}.log
     echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}" | tee -a ${SCRIPT_DIR}/${name}.log
     if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
@@ -35,6 +44,7 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
 	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
 	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
 	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+	    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
 	    continue
         fi
     elif [ "x${type}" = "xmysql" ]; then
@@ -46,10 +56,12 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
 	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
 	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
 	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+	    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
 	    continue
         fi
     else
 	echo "skipping, unknown DB type ${type}" | tee -a ${SCRIPT_DIR}/${name}.log
+        send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
 	continue
     fi
     rm -f ${SCRIPT_DIR}/${name}.error
@@ -58,6 +70,7 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
 	install -d ${BACKUP_PATH}
     else
 	echo "  skipping, backup for ${BACKUP_DATE} already exists" | tee -a ${SCRIPT_DIR}/${name}.log
+        send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
         rm -f ${SCRIPT_DIR}/${name}.dblist
 	continue
     fi
@@ -112,6 +125,7 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     else
 	status="FAILED (${db_fail} errors, ${db_ok} ok)"
     fi
+    send_email "${SCRIPT_DIR}/${name}.log" "${name} ${status}" "${notify}"
     rm -f ${SCRIPT_DIR}/${name}.dblist ${SCRIPT_DIR}/${name}.error.log
 done
 
