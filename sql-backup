@@ -1,10 +1,23 @@
 #!/bin/bash
 
-# Copyright (C) 2007-2013 Pirx Developers - https://pirx.dev/
+# Copyright (C) 2007-2018 Pirx Developers - https://pirx.dev/
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 SCRIPT_DIR="/root/scripts/sql-backup"
 BACKUP_ROOT_DIR="/mnt/backup"
 BACKUP_DATE=`date +"%Y%m%d"`
+GPG_PASS="someverylongandveryhardtoguesspassword"
 
 OLDIFS=${IFS}
 IFS="
@@ -81,12 +94,12 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
     find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
     if [ "${type}" = "pgsql" ]; then
 	echo -n "  global data -> pgsql_globals.gz " | tee -a ${SCRIPT_DIR}/${name}.log
-	/usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz
+	/usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz.gpg
 	if test -s ${SCRIPT_DIR}/${name}.error.log; then
 	    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
 	    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
         else
-	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
+	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
 	fi
     fi
     db_ok=0
@@ -95,24 +108,24 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
 	if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
 	    if [ "${type}" = "pgsql" ]; then
 		echo -n "  ${db} -> ${db}.dump " | tee -a ${SCRIPT_DIR}/${name}.log
-		/usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log > ${BACKUP_PATH}/${db}.dump
+		/usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.dump.gpg
 		if test -s ${SCRIPT_DIR}/${name}.error.log; then
 		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
 		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
                     db_fail=$((db_fail + 1))
     		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
                     db_ok=$((db_ok + 1))
 		fi
     	    elif [ "${type}" = "mysql" ]; then
 		echo -n "  ${db} -> ${db}.gz " | tee -a ${SCRIPT_DIR}/${name}.log
-		mysqldump -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null > ${BACKUP_PATH}/${db}.gz
+		mysqldump -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.gz.gpg
 		if test -s ${SCRIPT_DIR}/${name}.error.log; then
 		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
 		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
                     db_fail=$((db_fail + 1))
     		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
+		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
                     db_ok=$((db_ok + 1))
 		fi
 	    fi
