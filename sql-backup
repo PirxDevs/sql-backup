@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2007-2018 Pirx Developers - https://pirx.dev/
+# Copyright (C) 2007-2019 Pirx Developers - https://pirx.dev/
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; 
         echo "  server type: MySQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
 	export MYSQL_USER="${user}"
 	export MYSQL_PWD="${pass}"
-	mysql -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -v "Database" 1>${SCRIPT_DIR}/${name}.dblist
+	mysql -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -Ev "(Database|information_schema|performance_schema)" 1>${SCRIPT_DIR}/${name}.dblist
         if test -s ${SCRIPT_DIR}/${name}.error; then
 	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
 	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
