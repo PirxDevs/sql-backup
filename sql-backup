@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2007-2019 Pirx Developers - https://pirx.dev/
+# Copyright (C) 2007-2021 Pirx Developers - https://pirx.dev/
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,114 +32,113 @@ send_email () {
 }
 
 for entry in `cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"`; do
-    name=`echo "${entry}" | awk -F ":" '{ print $1}'`
-    type=`echo "${entry}" | awk -F ":" '{ print $2}'`
-    version=`echo "${entry}" | awk -F ":" '{ print $3}'`
-    host=`echo "${entry}" | awk -F ":" '{ print $4}'`
-    port=`echo "${entry}" | awk -F ":" '{ print $5}'`
-    user=`echo "${entry}" | awk -F ":" '{ print $6}'`
-    pass=`echo "${entry}" | awk -F ":" '{ print $7}'`
-    subdir=`echo "${entry}" | awk -F ":" '{ print $8}'`
-    days=`echo "${entry}" | awk -F ":" '{ print $9}'`
-    excludes=`echo "${entry}" | awk -F ":" '{ print $10}'`
-    notify=`echo "${entry}" | awk -F ":" '{ print $11}'`
-    rm -f ${SCRIPT_DIR}/${name}.log
-    echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}" | tee -a ${SCRIPT_DIR}/${name}.log
-    if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
-	mkdir -p ${BACKUP_ROOT_DIR}/${subdir}/${name}
+  name=`echo "${entry}" | awk -F ":" '{ print $1}'`
+  type=`echo "${entry}" | awk -F ":" '{ print $2}'`
+  version=`echo "${entry}" | awk -F ":" '{ print $3}'`
+  host=`echo "${entry}" | awk -F ":" '{ print $4}'`
+  port=`echo "${entry}" | awk -F ":" '{ print $5}'`
+  user=`echo "${entry}" | awk -F ":" '{ print $6}'`
+  pass=`echo "${entry}" | awk -F ":" '{ print $7}'`
+  subdir=`echo "${entry}" | awk -F ":" '{ print $8}'`
+  days=`echo "${entry}" | awk -F ":" '{ print $9}'`
+  excludes=`echo "${entry}" | awk -F ":" '{ print $10}'`
+  notify=`echo "${entry}" | awk -F ":" '{ print $11}'`
+  rm -f ${SCRIPT_DIR}/${name}.log
+  echo `date +"%d-%m-%Y %H:%M:%S"` "Backing up server ${name}" | tee -a ${SCRIPT_DIR}/${name}.log
+  if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
+    mkdir -p ${BACKUP_ROOT_DIR}/${subdir}/${name}
+  fi
+  if [ "x${type}" = "xpgsql" ]; then
+    echo "  server type: PostgreSQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
+    export PGUSER="${user}"
+    export PGPASSWORD="${pass}"
+    /usr/lib64/postgresql/${version}/bin/psql -q -t -h ${host} -p ${port} -c "select datname from pg_database;" template1 2>${SCRIPT_DIR}/${name}.error | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${SCRIPT_DIR}/${name}.dblist
+    if test -s ${SCRIPT_DIR}/${name}.error; then
+      echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
+      cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
+      rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+      send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
+      continue
     fi
-    if [ "x${type}" = "xpgsql" ]; then
-        echo "  server type: PostgreSQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
-	export PGUSER="${user}"
-	export PGPASSWORD="${pass}"
-	/usr/lib64/postgresql/${version}/bin/psql -q -t -h ${host} -p ${port} -c "select datname from pg_database;" template1 2>${SCRIPT_DIR}/${name}.error | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${SCRIPT_DIR}/${name}.dblist
-        if test -s ${SCRIPT_DIR}/${name}.error; then
-	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
-	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
-	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
-	    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
-	    continue
-        fi
-    elif [ "x${type}" = "xmysql" ]; then
-        echo "  server type: MySQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
-	export MYSQL_USER="${user}"
-	export MYSQL_PWD="${pass}"
-	mysql -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -Ev "(Database|information_schema|performance_schema)" 1>${SCRIPT_DIR}/${name}.dblist
-        if test -s ${SCRIPT_DIR}/${name}.error; then
-	    echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
-	    cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
-	    rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
-	    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
-	    continue
-        fi
+  elif [ "x${type}" = "xmysql" ]; then
+    echo "  server type: MySQL ${version}" | tee -a ${SCRIPT_DIR}/${name}.log
+    export MYSQL_PWD="${pass}"
+    mysql -u "${user}" -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -Ev "(Database|information_schema|performance_schema)" 1>${SCRIPT_DIR}/${name}.dblist
+    if test -s ${SCRIPT_DIR}/${name}.error; then
+      echo "  error reading list of databases" | tee -a ${SCRIPT_DIR}/${name}.log
+      cat ${SCRIPT_DIR}/${name}.error | tee -a ${SCRIPT_DIR}/${name}.log
+      rm -f ${SCRIPT_DIR}/${name}.error ${SCRIPT_DIR}/${name}.dblist
+      send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
+      continue
+    fi
+  else
+    echo "skipping, unknown DB type ${type}" | tee -a ${SCRIPT_DIR}/${name}.log
+    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
+    continue
+  fi
+  rm -f ${SCRIPT_DIR}/${name}.error
+  BACKUP_PATH="${BACKUP_ROOT_DIR}/${subdir}/${name}/${BACKUP_DATE}"
+  if ! test -d ${BACKUP_PATH}; then
+    install -d ${BACKUP_PATH}
+  else
+    echo "  skipping, backup for ${BACKUP_DATE} already exists" | tee -a ${SCRIPT_DIR}/${name}.log
+    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
+    rm -f ${SCRIPT_DIR}/${name}.dblist
+    continue
+  fi
+  if [ "x${days}" = "x" ];  then
+    days="30"
+  fi
+  echo "  removing backups older than ${days} days" | tee -a ${SCRIPT_DIR}/${name}.log
+  find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
+  if [ "${type}" = "pgsql" ]; then
+    echo -n "  global data -> pgsql_globals.gz " | tee -a ${SCRIPT_DIR}/${name}.log
+    /usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz.gpg
+    if test -s ${SCRIPT_DIR}/${name}.error.log; then
+      echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+      cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
     else
-	echo "skipping, unknown DB type ${type}" | tee -a ${SCRIPT_DIR}/${name}.log
-        send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
-	continue
+      echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
     fi
-    rm -f ${SCRIPT_DIR}/${name}.error
-    BACKUP_PATH="${BACKUP_ROOT_DIR}/${subdir}/${name}/${BACKUP_DATE}"
-    if ! test -d ${BACKUP_PATH}; then
-	install -d ${BACKUP_PATH}
-    else
-	echo "  skipping, backup for ${BACKUP_DATE} already exists" | tee -a ${SCRIPT_DIR}/${name}.log
-        send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${notify}"
-        rm -f ${SCRIPT_DIR}/${name}.dblist
-	continue
-    fi
-    if [ "x${days}" = "x" ];  then
-	days="30"
-    fi
-    echo "  removing backups older than ${days} days" | tee -a ${SCRIPT_DIR}/${name}.log
-    find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
-    if [ "${type}" = "pgsql" ]; then
-	echo -n "  global data -> pgsql_globals.gz " | tee -a ${SCRIPT_DIR}/${name}.log
-	/usr/lib64/postgresql/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/pgsql_globals.gz.gpg
-	if test -s ${SCRIPT_DIR}/${name}.error.log; then
-	    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
-	    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
+  fi
+  db_ok=0
+  db_fail=0
+  for db in $(cat ${SCRIPT_DIR}/${name}.dblist); do
+    if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
+      if [ "${type}" = "pgsql" ]; then
+        echo -n "  ${db} -> ${db}.dump " | tee -a ${SCRIPT_DIR}/${name}.log
+        /usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.dump.gpg
+        if test -s ${SCRIPT_DIR}/${name}.error.log; then
+          echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+          cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
+          db_fail=$((db_fail + 1))
         else
-	    echo "OK (size $(du -b ${BACKUP_PATH}/pgsql_globals.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
-	fi
-    fi
-    db_ok=0
-    db_fail=0
-    for db in $(cat ${SCRIPT_DIR}/${name}.dblist); do
-	if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
-	    if [ "${type}" = "pgsql" ]; then
-		echo -n "  ${db} -> ${db}.dump " | tee -a ${SCRIPT_DIR}/${name}.log
-		/usr/lib64/postgresql/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>${SCRIPT_DIR}/${name}.error.log | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.dump.gpg
-		if test -s ${SCRIPT_DIR}/${name}.error.log; then
-		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
-		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
-                    db_fail=$((db_fail + 1))
-    		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
-                    db_ok=$((db_ok + 1))
-		fi
-    	    elif [ "${type}" = "mysql" ]; then
-		echo -n "  ${db} -> ${db}.gz " | tee -a ${SCRIPT_DIR}/${name}.log
-		mysqldump -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.gz.gpg
-		if test -s ${SCRIPT_DIR}/${name}.error.log; then
-		    echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
-		    cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
-                    db_fail=$((db_fail + 1))
-    		else
-		    echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
-                    db_ok=$((db_ok + 1))
-		fi
-	    fi
+          echo "OK (size $(du -b ${BACKUP_PATH}/${db}.dump.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
+          db_ok=$((db_ok + 1))
+        fi
+      elif [ "${type}" = "mysql" ]; then
+        echo -n "  ${db} -> ${db}.gz " | tee -a ${SCRIPT_DIR}/${name}.log
+        mysqldump -u "${user}" -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>${SCRIPT_DIR}/${name}.error.log | gzip 2>/dev/null | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null > ${BACKUP_PATH}/${db}.gz.gpg
+        if test -s ${SCRIPT_DIR}/${name}.error.log; then
+          echo "FAILED" | tee -a ${SCRIPT_DIR}/${name}.log
+          cat ${SCRIPT_DIR}/${name}.error.log | tee -a ${SCRIPT_DIR}/${name}.log
+          db_fail=$((db_fail + 1))
         else
-	    echo "  ${db} is on exclude list, skipped" | tee -a ${SCRIPT_DIR}/${name}.log
-	fi
-    done
-    if [ ${db_fail} -eq 0 ]; then
-	status="OK"
+          echo "OK (size $(du -b ${BACKUP_PATH}/${db}.gz.gpg 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a ${SCRIPT_DIR}/${name}.log
+          db_ok=$((db_ok + 1))
+        fi
+      fi
     else
-	status="FAILED (${db_fail} errors, ${db_ok} ok)"
+      echo "  ${db} is on exclude list, skipped" | tee -a ${SCRIPT_DIR}/${name}.log
     fi
-    send_email "${SCRIPT_DIR}/${name}.log" "${name} ${status}" "${notify}"
-    rm -f ${SCRIPT_DIR}/${name}.dblist ${SCRIPT_DIR}/${name}.error.log
+  done
+  if [ ${db_fail} -eq 0 ]; then
+    status="OK"
+  else
+    status="FAILED (${db_fail} errors, ${db_ok} ok)"
+  fi
+  send_email "${SCRIPT_DIR}/${name}.log" "${name} ${status}" "${notify}"
+  rm -f ${SCRIPT_DIR}/${name}.dblist ${SCRIPT_DIR}/${name}.error.log
 done
 
 IFS=${OLDIFS}
