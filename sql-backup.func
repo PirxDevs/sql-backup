@@ -1,0 +1,37 @@
+send_email () {
+  if ! test -z "${smtp_host}" && ! test -z "${report_emails}"; then
+    echo -n "  Sending report to ${report_emails}"
+    if test -z "${smtp_port}"; then
+      smtp_port="587"
+    fi
+    if [ "${smtp_port}" = "465" ]; then
+      smtp_proto="smtps"
+    else
+      smtp_proto="smtp"
+    fi
+    curl_opts="-s ${smtp_proto}://${smtp_host}:${smtp_port} --ssl"
+    if ! test -z "${smtp_user}" && ! test -z "${smtp_password}"; then
+      curl_opts="${curl_opts} --user ${smtp_user}:${smtp_password}"
+    fi
+    curl_opts="${curl_opts} --upload-file - --mail-from ${mail_from}"
+    for mail in ${report_emails}; do
+      curl_opts="${curl_opts} --mail-rcpt ${mail}"
+    done
+    cat 2>/dev/null <<EOF | curl ${curl_opts}
+$(for mail in ${report_emails}; do echo "To: ${mail}"; done)
+From: ${mail_from}
+Reply-To: ${mail_from}
+Mime-Version: 1.0
+Content-type: text/plain; charset="utf-8"
+Subject: Database backup for ${job} ${job_status}
+
+$(cat "${job_log_file}" 2>/dev/null)
+EOF
+    if [ $? -eq 0 ]; then
+      echo " OK"
+    else
+      echo " FAILED"
+    fi
+  fi
+  rm -f "${job_log_file}"
+}

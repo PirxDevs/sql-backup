@@ -15,181 +15,158 @@
 # limitations under the License.
 
 #
-# Script configuration
-#
-
-# Directory in which backup files will be stored
-BACKUP_ROOT_DIR="/mnt/backup"
-# Directory in which versioned PostgreSQL binaries and libraries are kept
-POSTGRESQL_ROOT_DIR="/usr/lib/postgresql"
-# Date format for backup folders, see "man date" for details
-BACKUP_DATE_FORMAT="%Y%m%d"
-# Mail server used for sending reports
-MAIL_HOST="mail.server.com"
-# Mail address used for From and Reply-To headers
-MAIL_FROM="sql-backup@domain.com"
-# Password for encrypting backup files, leave empty for no encryption
-GPG_PASS="someverylongandveryhardtoguesspassword"
-
-#
 # Do not edit anything below unless you know what you are doing
 #
 
 SCRIPT_DIR=$(dirname "${0}")
+
+if test -f "${SCRIPT_DIR}/sql-backup.func"; then
+  . "${SCRIPT_DIR}/sql-backup.func"
+else
+  echo "Function file not found or not readable"
+  exit 1
+fi
+
+if test -f "${SCRIPT_DIR}/sql-backup.conf"; then
+  . "${SCRIPT_DIR}/sql-backup.conf"
+else
+  echo "Configuration file not found or not readable"
+  exit 1
+fi
+
 BACKUP_DATE=$(date +"${BACKUP_DATE_FORMAT}")
 
-send_email () {
-  if ! test -z "${3}"; then
-    recipients=$(echo "${3}" | sed -e 's/\s//g; s/,/ /g;')
-    echo "  Sending report to ${recipients}"
-    curl_opts="-s smtp://${MAIL_HOST} --upload-file - --mail-from ${MAIL_FROM}"
-    for mail in ${recipients}; do
-      curl_opts="${curl_opts} --mail-rcpt ${mail}"
-    done
-    cat 2>/dev/null <<EOF | curl ${curl_opts}
-$(for mail in ${recipients}; do echo "To: ${mail}"; done)
-From: ${MAIL_FROM}
-Reply-To: ${MAIL_FROM}
-Mime-Version: 1.0
-Content-type: text/plain; charset="utf-8"
-Subject: Database backup for ${2}
-
-$(cat "${1}" 2>/dev/null)
-EOF
+for job in ${BACKUP_JOBS}; do
+  if test -f "${SCRIPT_DIR}/jobs/${job}.conf"; then
+    . "${SCRIPT_DIR}/jobs/${job}.conf"
+  else
+    echo "Configuration for job \"${job}\" not found or not readable, skipping"
+    continue
   fi
-  rm -f "${1}"
-}
-
-for entry in $(cat ${SCRIPT_DIR}/sql-backup.conf | grep -v "^#" | grep -v "^$"); do
-  name=$(echo "${entry}" | awk -F ":" '{ print $1}')
-  type=$(echo "${entry}" | awk -F ":" '{ print $2}')
-  version=$(echo "${entry}" | awk -F ":" '{ print $3}')
-  host=$(echo "${entry}" | awk -F ":" '{ print $4}')
-  port=$(echo "${entry}" | awk -F ":" '{ print $5}')
-  user=$(echo "${entry}" | awk -F ":" '{ print $6}')
-  pass=$(echo "${entry}" | awk -F ":" '{ print $7}')
-  subdir=$(echo "${entry}" | awk -F ":" '{ print $8}')
-  days=$(echo "${entry}" | awk -F ":" '{ print $9}')
-  excludes=$(echo "${entry}" | awk -F ":" '{ print $10}')
-  mails=$(echo "${entry}" | awk -F ":" '{ print $11}')
-  rm -f "${SCRIPT_DIR}/${name}.log"
-  echo "$(date +"%d-%m-%Y %H:%M:%S") Backing up server ${name}" | tee -a "${SCRIPT_DIR}/${name}.log"
-  if ! test -d ${BACKUP_ROOT_DIR}/${subdir}/${name}; then
-    mkdir -p ${BACKUP_ROOT_DIR}/${subdir}/${name}
+  job_log_file=$(mktemp 2>/dev/null)
+  job_error_file=$(mktemp 2>/dev/null)
+  job_dblist_file=$(mktemp 2>/dev/null)
+  echo "$(date +"%d-%m-%Y %H:%M:%S") Running backup job ${job}" | tee -a "${job_log_file}"
+  if ! test -d "${BACKUP_ROOT_DIR}/${job}"; then
+    mkdir -p "${BACKUP_ROOT_DIR}/${job}"
   fi
-  if [ "x${type}" = "xpgsql" ]; then
-    echo "  Server type: PostgreSQL ${version}" | tee -a "${SCRIPT_DIR}/${name}.log"
-    export PGUSER="${user}"
-    export PGPASSWORD="${pass}"
-    ${POSTGRESQL_ROOT_DIR}/${version}/bin/psql -q -t -h ${host} -p ${port} -c "select datname from pg_database;" template1 2>${SCRIPT_DIR}/${name}.error | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>"${SCRIPT_DIR}/${name}.dblist"
-    if test -s ${SCRIPT_DIR}/${name}.error; then
-      echo "  Error reading list of databases" | tee -a "${SCRIPT_DIR}/${name}.log"
-      cat ${SCRIPT_DIR}/${name}.error | tee -a "${SCRIPT_DIR}/${name}.log"
-      rm -f ${SCRIPT_DIR}/${name}.error "${SCRIPT_DIR}/${name}.dblist"
-      send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${mails}"
+  if [ "${db_type}" = "pgsql" ]; then
+    echo "  Server type: PostgreSQL ${db_version}" | tee -a "${job_log_file}"
+    export PGUSER="${db_user}"
+    export PGPASSWORD="${db_password}"
+    ${POSTGRESQL_ROOT_DIR}/${db_version}/bin/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>${job_error_file} | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${job_dblist_file}
+    if test -s ${job_error_file}; then
+      echo "  Error reading list of databases" | tee -a "${job_log_file}"
+      cat ${job_error_file} | tee -a "${job_log_file}"
+      rm -f ${job_error_file} ${job_dblist_file}
+      send_email
       continue
     fi
-  elif [ "x${type}" = "xmysql" ]; then
-    echo "  Server type: MySQL ${version}" | tee -a "${SCRIPT_DIR}/${name}.log"
-    export MYSQL_PWD="${pass}"
-    mysql -u "${user}" -h ${host} -e "show databases;" 2>${SCRIPT_DIR}/${name}.error | grep -Ev "(Database|information_schema|performance_schema)" 1>"${SCRIPT_DIR}/${name}.dblist"
-    if test -s ${SCRIPT_DIR}/${name}.error; then
-      echo "  Error reading list of databases" | tee -a "${SCRIPT_DIR}/${name}.log"
-      cat ${SCRIPT_DIR}/${name}.error | tee -a "${SCRIPT_DIR}/${name}.log"
-      rm -f ${SCRIPT_DIR}/${name}.error "${SCRIPT_DIR}/${name}.dblist"
-      send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${mails}"
+  elif [ "${db_type}" = "mysql" ]; then
+    echo "  Server type: MySQL ${db_version}" | tee -a "${job_log_file}"
+    export MYSQL_PWD="${db_password}"
+    mysql -u "${db_user}" -h ${db_host} -e "show databases;" 2>${job_error_file} | grep -Ev "(Database|information_schema|performance_schema)" 1>${job_dblist_file}
+    if test -s ${job_error_file}; then
+      echo "  Error reading list of databases" | tee -a "${job_log_file}"
+      cat ${job_error_file} | tee -a "${job_log_file}"
+      rm -f ${job_error_file} ${job_dblist_file}
+      job_status="FAILED"
+      send_email
       continue
     fi
   else
-    echo "Skipping, unknown DB type ${type}" | tee -a "${SCRIPT_DIR}/${name}.log"
-    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${mails}"
+    echo "Skipping, unknown DB type ${db_type}" | tee -a "${job_log_file}"
+    job_status="FAILED"
+    send_email
     continue
   fi
-  rm -f ${SCRIPT_DIR}/${name}.error
-  BACKUP_PATH="${BACKUP_ROOT_DIR}/${subdir}/${name}/${BACKUP_DATE}"
+  rm -f ${job_error_file}
+  BACKUP_PATH="${BACKUP_ROOT_DIR}/${job}/${BACKUP_DATE}"
   if ! test -d ${BACKUP_PATH}; then
     install -d ${BACKUP_PATH}
   else
-    echo "  Skipping, backup for ${BACKUP_DATE} already exists" | tee -a "${SCRIPT_DIR}/${name}.log"
-    send_email "${SCRIPT_DIR}/${name}.log" "${name} FAILED" "${mails}"
-    rm -f "${SCRIPT_DIR}/${name}.dblist"
+    echo "  Skipping, backup for ${BACKUP_DATE} already exists" | tee -a "${job_log_file}"
+    job_status="FAILED"
+    send_email
+    rm -f ${job_dblist_file}
     continue
   fi
-  if [ "${days}" = "" ];  then
-    days="30"
+  if ! test -z "${retention_days}" && echo "${retention_days}" | grep -q -E "^[0-9]+$";  then
+    echo "  Removing backups older than ${retention_days} days" | tee -a "${job_log_file}"
+    find ${BACKUP_ROOT_DIR}/${job} -mindepth 1 -type d -mtime +${retention_days} -exec rm -rf {} \; 1>/dev/null 2>&1
   fi
-  echo "  Removing backups older than ${days} days" | tee -a "${SCRIPT_DIR}/${name}.log"
-  find ${BACKUP_ROOT_DIR}/${subdir}/${name} -mindepth 1 -type d -mtime +${days} -exec rm -rf {} \; 1>/dev/null 2>&1
-  if [ "${type}" = "pgsql" ]; then
-    backup_cmd="${POSTGRESQL_ROOT_DIR}/${version}/bin/pg_dumpall -g -h ${host} -p ${port} 2>\"${SCRIPT_DIR}/${name}.error.log\" | gzip 2>/dev/null"
+  if [ "${db_type}" = "pgsql" ]; then
+    backup_cmd="${POSTGRESQL_ROOT_DIR}/${db_version}/bin/pg_dumpall -g -h ${db_host} -p ${db_port} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
     backup_file="${BACKUP_PATH}/pgsql_globals.gz"
-    if ! test -z "${GPG_PASS}"; then
-      backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null"
+    if ! test -z "${gpg_password}"; then
+      backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
       backup_file="${backup_file}.gpg"
     fi
     backup_cmd="${backup_cmd} > ${backup_file}"
     backup_file_name=$(basename "${backup_file}")
-    echo -n "  PostgreSQL globals -> ${backup_file_name} " | tee -a "${SCRIPT_DIR}/${name}.log"
+    echo -n "  PostgreSQL globals -> ${backup_file_name} " | tee -a "${job_log_file}"
     eval "${backup_cmd}"
-    if test -s "${SCRIPT_DIR}/${name}.error.log"; then
-      echo "FAILED" | tee -a "${SCRIPT_DIR}/${name}.log"
-      cat "${SCRIPT_DIR}/${name}.error.log" | tee -a "${SCRIPT_DIR}/${name}.log"
+    if test -s "${job_error_file}.log"; then
+      echo "FAILED" | tee -a "${job_log_file}"
+      cat "${job_error_file}.log" | tee -a "${job_log_file}"
     else
-      echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${SCRIPT_DIR}/${name}.log"
+      echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
     fi
   fi
   db_ok=0
   db_fail=0
-  for db in $(cat "${SCRIPT_DIR}/${name}.dblist"); do
-    if ! egrep -q "^"${db}"$" ${SCRIPT_DIR}/${excludes} 2>/dev/null; then
-      if [ "${type}" = "pgsql" ]; then
-        backup_cmd="${POSTGRESQL_ROOT_DIR}/${version}/bin/pg_dump -b -Fc -h ${host} -p ${port} ${db} 2>\"${SCRIPT_DIR}/${name}.error.log\""
+  for db in $(cat ${job_dblist_file}); do
+    for exclude in ${excludes}; do
+      if [ "${db}" = "${exclude}" ]; then
+        echo "  Database ${db} is on exclude list, skipped" | tee -a "${job_log_file}"
+        continue 2
+      fi
+    done
+      if [ "${db_type}" = "pgsql" ]; then
+        backup_cmd="${POSTGRESQL_ROOT_DIR}/${db_version}/bin/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${db} 2>\"${job_error_file}.log\""
         backup_file="${BACKUP_PATH}/${db}.dump"
-        if ! test -z "${GPG_PASS}"; then
-          backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null"
+        if ! test -z "${gpg_password}"; then
+          backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
           backup_file="${backup_file}.gpg"
         fi
         backup_cmd="${backup_cmd} > ${backup_file}"
         backup_file_name=$(basename "${backup_file}")
-        echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${SCRIPT_DIR}/${name}.log"
+        echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
         eval "${backup_cmd}"
-        if test -s "${SCRIPT_DIR}/${name}.error.log"; then
-          echo "FAILED" | tee -a "${SCRIPT_DIR}/${name}.log"
-          cat "${SCRIPT_DIR}/${name}.error.log" | tee -a "${SCRIPT_DIR}/${name}.log"
+        if test -s "${job_error_file}.log"; then
+          echo "FAILED" | tee -a "${job_log_file}"
+          cat "${job_error_file}.log" | tee -a "${job_log_file}"
           db_fail=$((db_fail + 1))
         else
-          echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${SCRIPT_DIR}/${name}.log"
+          echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
           db_ok=$((db_ok + 1))
         fi
-      elif [ "${type}" = "mysql" ]; then
-        backup_cmd="mysqldump -u \"${user}\" -h ${host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>\"${SCRIPT_DIR}/${name}.error.log\" | gzip 2>/dev/null"
+      elif [ "${db_type}" = "mysql" ]; then
+        backup_cmd="mysqldump -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
         backup_file="${BACKUP_PATH}/${db}.gz"
-        if ! test -z "${GPG_PASS}"; then
-          backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${GPG_PASS} 2>/dev/null"
+        if ! test -z "${gpg_password}"; then
+          backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
           backup_file="${backup_file}.gpg"
         fi
         backup_cmd="${backup_cmd} > ${backup_file}"
         backup_file_name=$(basename "${backup_file}")
-        echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${SCRIPT_DIR}/${name}.log"
+        echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
         eval "${backup_cmd}"
-        if test -s "${SCRIPT_DIR}/${name}.error.log"; then
-          echo "FAILED" | tee -a "${SCRIPT_DIR}/${name}.log"
-          cat "${SCRIPT_DIR}/${name}.error.log" | tee -a "${SCRIPT_DIR}/${name}.log"
+        if test -s "${job_error_file}.log"; then
+          echo "FAILED" | tee -a "${job_log_file}"
+          cat "${job_error_file}.log" | tee -a "${job_log_file}"
           db_fail=$((db_fail + 1))
         else
-          echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${SCRIPT_DIR}/${name}.log"
+          echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
           db_ok=$((db_ok + 1))
         fi
       fi
-    else
-      echo "  ${db} is on exclude list, skipped" | tee -a "${SCRIPT_DIR}/${name}.log"
-    fi
   done
   if [ ${db_fail} -eq 0 ]; then
-    status="OK"
+    job_status="OK"
   else
-    status="FAILED (${db_fail} errors, ${db_ok} ok)"
+    job_status="FAILED (${db_fail} errors, ${db_ok} ok)"
   fi
-  send_email "${SCRIPT_DIR}/${name}.log" "${name} ${status}" "${mails}"
-  rm -f "${SCRIPT_DIR}/${name}.dblist" "${SCRIPT_DIR}/${name}.error.log"
+  send_email
+  rm -f ${job_dblist_file} "${job_error_file}.log"
 done
