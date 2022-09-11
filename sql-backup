@@ -14,10 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#
-# Do not edit anything below unless you know what you are doing
-#
-
 SCRIPT_DIR=$(dirname "${0}")
 
 if test -f "${SCRIPT_DIR}/sql-backup.func"; then
