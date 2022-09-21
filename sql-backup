@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-SCRIPT_DIR=$(dirname "${0}")
+SCRIPT_DIR=$(realpath "${0}")
+SCRIPT_DIR=$(dirname "${SCRIPT_DIR}")
 
 if test -f "${SCRIPT_DIR}/sql-backup.func"; then
   . "${SCRIPT_DIR}/sql-backup.func"
