@@ -15,6 +15,11 @@
 send_email () {
   if ! test -z "${smtp_host}" && ! test -z "${report_emails}"; then
     echo -n "  Sending report to ${report_emails}"
+    if ! test -z "${curl_options}"; then
+      curl_opts="${curl_options}"
+    else
+      curl_opts=""
+    fi
     if test -z "${smtp_port}"; then
       smtp_port="587"
     fi
@@ -23,7 +28,7 @@ send_email () {
     else
       smtp_proto="smtp"
     fi
-    curl_opts="-s ${smtp_proto}://${smtp_host}:${smtp_port} --ssl"
+    curl_opts="${curl_opts} -s ${smtp_proto}://${smtp_host}:${smtp_port}"
     if ! test -z "${smtp_user}" && ! test -z "${smtp_password}"; then
       curl_opts="${curl_opts} --user ${smtp_user}:${smtp_password}"
     fi
