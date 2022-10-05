@@ -31,9 +31,14 @@ send_email () {
     for mail in ${report_emails}; do
       curl_opts="${curl_opts} --mail-rcpt ${mail}"
     done
+    if ! test -z "${mail_name}"; then
+      mail_addr="\"${mail_name}\" <${mail_from}>"
+    else
+      mail_addr="${mail_from}"
+    fi
     cat 2>/dev/null <<EOF | curl ${curl_opts}
 $(for mail in ${report_emails}; do echo "To: ${mail}"; done)
-From: ${mail_from}
+From: ${mail_addr}
 Reply-To: ${mail_from}
 Mime-Version: 1.0
 Content-type: text/plain; charset="utf-8"
