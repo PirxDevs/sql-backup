@@ -51,7 +51,8 @@ for job in ${BACKUP_JOBS}; do
     echo "  Server type: PostgreSQL ${db_version}" | tee -a "${job_log_file}"
     export PGUSER="${db_user}"
     export PGPASSWORD="${db_password}"
-    ${POSTGRESQL_ROOT_DIR}/${db_version}/bin/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>${job_error_file} | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${job_dblist_file}
+    POSTGRESQL_BIN_DIR=$(echo "" ${POSTGRESQL_BIN_DIR} | sed -e 's/%v/'${db_version}'/' 2>/dev/null)
+    ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>${job_error_file} | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${job_dblist_file}
     if test -s ${job_error_file}; then
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
       cat ${job_error_file} | tee -a "${job_log_file}"
@@ -93,7 +94,7 @@ for job in ${BACKUP_JOBS}; do
     find ${BACKUP_ROOT_DIR}/${job} -mindepth 1 -type d -mtime +${retention_days} -exec rm -rf {} \; 1>/dev/null 2>&1
   fi
   if [ "${db_type}" = "pgsql" ]; then
-    backup_cmd="${POSTGRESQL_ROOT_DIR}/${db_version}/bin/pg_dumpall -g -h ${db_host} -p ${db_port} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+    backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dumpall -g -h ${db_host} -p ${db_port} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
     backup_file="${BACKUP_PATH}/pgsql_globals.gz"
     if ! test -z "${gpg_password}"; then
       backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
@@ -120,7 +121,7 @@ for job in ${BACKUP_JOBS}; do
       fi
     done
       if [ "${db_type}" = "pgsql" ]; then
-        backup_cmd="${POSTGRESQL_ROOT_DIR}/${db_version}/bin/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${db} 2>\"${job_error_file}.log\""
+        backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${db} 2>\"${job_error_file}.log\""
         backup_file="${BACKUP_PATH}/${db}.dump"
         if ! test -z "${gpg_password}"; then
           backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
