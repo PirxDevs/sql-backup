@@ -53,6 +53,7 @@ for job in ${BACKUP_JOBS}; do
     mail_name=""
     retention_days=""
     excludes=""
+    data_excludes=""
     report_emails=""
     gpg_password=""
     curl_options=""
@@ -135,14 +136,48 @@ for job in ${BACKUP_JOBS}; do
   db_ok=0
   db_fail=0
   for db in $(cat ${job_dblist_file}); do
+    backup_opts=""
+    no_data=""
+    exclude_tables=""
+    data_exclude_tables=""
     for exclude in ${excludes}; do
-      if [ "${db}" = "${exclude}" ]; then
-        echo "  Database ${db} is on exclude list, skipped" | tee -a "${job_log_file}"
-        continue 2
+      if echo "${exclude}" | grep -q -E "^"${db}; then
+        if [ "${db}" = "${exclude}" ]; then
+          echo "  Database ${db} is on exclude list, skipped" | tee -a "${job_log_file}"
+          continue 2
+        else
+          exclude_tables="${exclude#*:}"
+          exclude_tables="${exclude_tables//,/ }"
+        fi
+      fi
+    done
+    for data_exclude in ${data_excludes}; do
+      if echo "${data_exclude}" | grep -q -E "^"${db}; then
+        if [ "${db}" = "${data_exclude}" ]; then
+          no_data="true"
+          if [ "${db_type}" = "pgsql" ]; then
+            backup_opts="${backup_opts} --schema-only"
+          elif [ "${db_type}" = "mysql" ]; then
+            backup_opts="${backup_opts} --no-data"
+          fi
+        else
+          data_exclude_tables="${data_exclude#*:}"
+          data_exclude_tables="${data_exclude_tables//,/ }"
+        fi
       fi
     done
     if [ "${db_type}" = "pgsql" ]; then
-      backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${db} 2>\"${job_error_file}.log\""
+      for table in ${exclude_tables}; do
+        schema="${table%%.*}"
+        table="${table##*.}"
+        backup_opts="${backup_opts} --exclude-table='\"${schema}\".\"${table}\"'"
+      done
+      for table in ${data_exclude_tables}; do
+        schema="${table%%.*}"
+        table="${table##*.}"
+        backup_opts="${backup_opts} --exclude-table-data='\"${schema}\".\"${table}\"'"
+      done
+      backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${backup_opts} ${db} 2>\"${job_error_file}.log\""
       backup_file="${BACKUP_PATH}/${db}.dump"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
@@ -160,8 +195,27 @@ for job in ${BACKUP_JOBS}; do
         echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
+      if ! test -z "${no_data}"; then
+        echo "    Schema only, no data" | tee -a "${job_log_file}"
+      fi
+      if ! test -z "${exclude_tables}"; then
+        echo "    Skipped tables: ${exclude_tables} " | tee -a "${job_log_file}"
+      fi
+      if ! test -z "${data_exclude_tables}"; then
+        echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
+      fi
     elif [ "${db_type}" = "mysql" ]; then
-      backup_cmd="mysqldump -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      for table in ${exclude_tables}; do
+        backup_opts="${backup_opts} --ignore-table=\"${db}.${table}\""
+      done
+      if mysqldump --help 2>/dev/null | grep -q "ignore-table-data"; then
+        for table in ${data_exclude_tables}; do
+          backup_opts="${backup_opts} --ignore-table-data='\"${db}.${table}\"'"
+        done
+      elif ! test -z "${data_exclude_tables}"; then
+        data_exclude_tables="none, not supported by mysqldump"
+      fi
+      backup_cmd="mysqldump -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
@@ -178,6 +232,15 @@ for job in ${BACKUP_JOBS}; do
       else
         echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
+      fi
+      if ! test -z "${no_data}"; then
+        echo "    Schema only, no data" | tee -a "${job_log_file}"
+      fi
+      if ! test -z "${exclude_tables}"; then
+        echo "    Skipped tables: ${exclude_tables} " | tee -a "${job_log_file}"
+      fi
+      if ! test -z "${data_exclude_tables}"; then
+        echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
       fi
     fi
   done
