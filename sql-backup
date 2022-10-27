@@ -35,6 +35,23 @@ BACKUP_DATE=$(date +"${BACKUP_DATE_FORMAT}")
 
 for job in ${BACKUP_JOBS}; do
   if test -f "${SCRIPT_DIR}/jobs/${job}.conf"; then
+    db_type=""
+    db_version=""
+    db_host=""
+    db_port=""
+    db_user=""
+    db_password=""
+    smtp_host=""
+    smtp_port=""
+    smtp_user=""
+    smtp_password=""
+    mail_from=""
+    mail_name=""
+    retention_days=""
+    excludes=""
+    report_emails=""
+    gpg_password=""
+    curl_options=""
     . "${SCRIPT_DIR}/jobs/${job}.conf"
   else
     echo "Configuration for job \"${job}\" not found or not readable, skipping"
