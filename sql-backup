@@ -33,6 +33,10 @@ fi
 
 BACKUP_DATE=$(date +"${BACKUP_DATE_FORMAT}")
 
+if ! test -z "$@"; then
+  BACKUP_JOBS="$@"
+fi
+
 for job in ${BACKUP_JOBS}; do
   if test -f "${SCRIPT_DIR}/jobs/${job}.conf"; then
     db_type=""
