@@ -126,6 +126,9 @@ for job in ${BACKUP_JOBS}; do
     backup_file_name=$(basename "${backup_file}")
     echo -n "  PostgreSQL globals -> ${backup_file_name} " | tee -a "${job_log_file}"
     eval "${backup_cmd}"
+    if test -f "${backup_file}"; then
+      chmod 600 "${backup_file}"
+    fi
     if test -s "${job_error_file}.log"; then
       echo "FAILED" | tee -a "${job_log_file}"
       cat "${job_error_file}.log" | tee -a "${job_log_file}"
@@ -187,6 +190,9 @@ for job in ${BACKUP_JOBS}; do
       backup_file_name=$(basename "${backup_file}")
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
       eval "${backup_cmd}"
+      if test -f "${backup_file}"; then
+        chmod 600 "${backup_file}"
+      fi
       if test -s "${job_error_file}.log"; then
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
@@ -225,6 +231,9 @@ for job in ${BACKUP_JOBS}; do
       backup_file_name=$(basename "${backup_file}")
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
       eval "${backup_cmd}"
+      if test -f "${backup_file}"; then
+        chmod 600 "${backup_file}"
+      fi
       if test -s "${job_error_file}.log"; then
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
