@@ -67,18 +67,18 @@ for job in ${BACKUP_JOBS}; do
   job_dblist_file=$(mktemp 2>/dev/null)
   echo "$(date +"%d-%m-%Y %H:%M:%S") Running backup job ${job}" | tee -a "${job_log_file}"
   if ! test -d "${BACKUP_ROOT_DIR}/${job}"; then
-    mkdir -p "${BACKUP_ROOT_DIR}/${job}"
+    install -m 700 -d "${BACKUP_ROOT_DIR}" "${BACKUP_ROOT_DIR}/${job}"
   fi
   if [ "${db_type}" = "pgsql" ]; then
     echo "  Server type: PostgreSQL ${db_version}" | tee -a "${job_log_file}"
     export PGUSER="${db_user}"
     export PGPASSWORD="${db_password}"
-    POSTGRESQL_BIN_DIR=$(echo "" ${POSTGRESQL_BIN_DIR} | sed -e 's/%v/'${db_version}'/' 2>/dev/null)
+    POSTGRESQL_BIN_DIR=$(echo "${POSTGRESQL_BIN_DIR}" | sed -e 's/%v/'${db_version}'/' 2>/dev/null)
     ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>${job_error_file} | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${job_dblist_file}
-    if test -s ${job_error_file}; then
+    if test -s "${job_error_file}"; then
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
-      cat ${job_error_file} | tee -a "${job_log_file}"
-      rm -f ${job_error_file} ${job_dblist_file}
+      cat "${job_error_file}" | tee -a "${job_log_file}"
+      rm -f "${job_error_file}" "${job_dblist_file}"
       send_email
       continue
     fi
@@ -86,10 +86,10 @@ for job in ${BACKUP_JOBS}; do
     echo "  Server type: MySQL ${db_version}" | tee -a "${job_log_file}"
     export MYSQL_PWD="${db_password}"
     mysql -u "${db_user}" -h ${db_host} -e "show databases;" 2>${job_error_file} | grep -Ev "(Database|information_schema|performance_schema)" 1>${job_dblist_file}
-    if test -s ${job_error_file}; then
+    if test -s "${job_error_file}"; then
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
-      cat ${job_error_file} | tee -a "${job_log_file}"
-      rm -f ${job_error_file} ${job_dblist_file}
+      cat "${job_error_file}" | tee -a "${job_log_file}"
+      rm -f "${job_error_file}" "${job_dblist_file}"
       job_status="FAILED"
       send_email
       continue
@@ -100,20 +100,20 @@ for job in ${BACKUP_JOBS}; do
     send_email
     continue
   fi
-  rm -f ${job_error_file}
+  rm -f "${job_error_file}"
   BACKUP_PATH="${BACKUP_ROOT_DIR}/${job}/${BACKUP_DATE}"
-  if ! test -d ${BACKUP_PATH}; then
-    install -d ${BACKUP_PATH}
+  if ! test -d "${BACKUP_PATH}"; then
+    install -m 700 -d "${BACKUP_PATH}"
   else
     echo "  Skipping, backup for ${BACKUP_DATE} already exists" | tee -a "${job_log_file}"
     job_status="FAILED"
     send_email
-    rm -f ${job_dblist_file}
+    rm -f "${job_dblist_file}"
     continue
   fi
   if ! test -z "${retention_days}" && echo "${retention_days}" | grep -q -E "^[0-9]+$";  then
     echo "  Removing backups older than ${retention_days} days" | tee -a "${job_log_file}"
-    find ${BACKUP_ROOT_DIR}/${job} -mindepth 1 -type d -mtime +${retention_days} -exec rm -rf {} \; 1>/dev/null 2>&1
+    find "${BACKUP_ROOT_DIR}/${job}" -mindepth 1 -type d -mtime +${retention_days} -exec rm -rf {} \; 1>/dev/null 2>&1
   fi
   if [ "${db_type}" = "pgsql" ]; then
     backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dumpall -g -h ${db_host} -p ${db_port} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
@@ -138,7 +138,7 @@ for job in ${BACKUP_JOBS}; do
   fi
   db_ok=0
   db_fail=0
-  for db in $(cat ${job_dblist_file}); do
+  for db in $(cat "${job_dblist_file}"); do
     backup_opts=""
     no_data=""
     exclude_tables=""
@@ -259,5 +259,5 @@ for job in ${BACKUP_JOBS}; do
     job_status="FAILED (${db_fail} errors, ${db_ok} ok)"
   fi
   send_email
-  rm -f ${job_dblist_file} "${job_error_file}.log"
+  rm -f "${job_dblist_file}" "${job_error_file}.log"
 done
