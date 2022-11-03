@@ -149,8 +149,9 @@ for job in ${BACKUP_JOBS}; do
           echo "  Database ${db} is on exclude list, skipped" | tee -a "${job_log_file}"
           continue 2
         else
-          exclude_tables="${exclude#*:}"
-          exclude_tables="${exclude_tables//,/ }"
+          exclude_table="${exclude#*:}"
+          exclude_table="${exclude_table//,/ }"
+          exclude_tables="${exclude_tables} ${exclude_table}"
         fi
       fi
     done
@@ -164,20 +165,29 @@ for job in ${BACKUP_JOBS}; do
             backup_opts="${backup_opts} --no-data"
           fi
         else
-          data_exclude_tables="${data_exclude#*:}"
-          data_exclude_tables="${data_exclude_tables//,/ }"
+          data_exclude_table="${data_exclude#*:}"
+          data_exclude_table="${data_exclude_table//,/ }"
+          data_exclude_tables="${data_exclude_tables} ${data_exclude_table}"
         fi
       fi
     done
     if [ "${db_type}" = "pgsql" ]; then
       for table in ${exclude_tables}; do
-        schema="${table%%.*}"
-        table="${table##*.}"
+        if echo "${table}" | grep -q -E "\."; then
+          schema="${table%%.*}"
+          table="${table##*.}"
+        else
+          schema="public"
+        fi
         backup_opts="${backup_opts} --exclude-table='\"${schema}\".\"${table}\"'"
       done
       for table in ${data_exclude_tables}; do
-        schema="${table%%.*}"
-        table="${table##*.}"
+        if echo "${table}" | grep -q -E "\."; then
+          schema="${table%%.*}"
+          table="${table##*.}"
+        else
+          schema="public"
+        fi
         backup_opts="${backup_opts} --exclude-table-data='\"${schema}\".\"${table}\"'"
       done
       backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${backup_opts} ${db} 2>\"${job_error_file}.log\""
