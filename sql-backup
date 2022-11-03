@@ -148,7 +148,7 @@ for job in ${BACKUP_JOBS}; do
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
       else
-        echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
+        echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
       fi
     fi
   fi
@@ -224,7 +224,7 @@ for job in ${BACKUP_JOBS}; do
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
         db_fail=$((db_fail + 1))
       else
-        echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
+        echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
       if ! test -z "${no_data}"; then
@@ -265,7 +265,7 @@ for job in ${BACKUP_JOBS}; do
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
         db_fail=$((db_fail + 1))
       else
-        echo "OK (size $(du -b "${backup_file}" 2>&1 | awk -F" " '{print $1}') bytes)" | tee -a "${job_log_file}"
+        echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
       if ! test -z "${no_data}"; then
