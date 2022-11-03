@@ -74,7 +74,7 @@ for job in ${BACKUP_JOBS}; do
     export PGUSER="${db_user}"
     export PGPASSWORD="${db_password}"
     POSTGRESQL_BIN_DIR=$(echo "${POSTGRESQL_BIN_DIR}" | sed -e 's/%v/'${db_version}'/' 2>/dev/null)
-    ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>${job_error_file} | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>${job_dblist_file}
+    ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>"${job_error_file}" | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>"${job_dblist_file}"
     if test -s "${job_error_file}"; then
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
       cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -85,7 +85,7 @@ for job in ${BACKUP_JOBS}; do
   elif [ "${db_type}" = "mysql" ]; then
     echo "  Server type: MySQL ${db_version}" | tee -a "${job_log_file}"
     export MYSQL_PWD="${db_password}"
-    mysql -u "${db_user}" -h ${db_host} -e "show databases;" 2>${job_error_file} | grep -Ev "(Database|information_schema|performance_schema)" 1>${job_dblist_file}
+    mysql -u "${db_user}" -h ${db_host} -e "show databases;" 2>"${job_error_file}" | grep -Ev "(Database|information_schema|performance_schema)" 1>"${job_dblist_file}"
     if test -s "${job_error_file}"; then
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
       cat "${job_error_file}" | tee -a "${job_log_file}"
