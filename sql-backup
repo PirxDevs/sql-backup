@@ -79,6 +79,7 @@ for job in ${BACKUP_JOBS}; do
       echo "  Error reading list of databases" | tee -a "${job_log_file}"
       cat "${job_error_file}" | tee -a "${job_log_file}"
       rm -f "${job_error_file}" "${job_dblist_file}"
+      job_status="FAILED"
       send_email
       continue
     fi
