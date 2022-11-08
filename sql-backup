@@ -195,7 +195,8 @@ for job in ${BACKUP_JOBS}; do
         else
           schema="public"
         fi
-        backup_opts="${backup_opts} --exclude-table='\"${schema}\".\"${table}\"'"
+        table_name=$(echo "${schema}.${table}" | sed -r -e 's/([^\*\?\.]+)/"\1"/g;')
+        backup_opts="${backup_opts} --exclude-table='${table_name}'"
       done
       for table in ${data_exclude_tables}; do
         if echo "${table}" | grep -q -E "\."; then
@@ -204,7 +205,8 @@ for job in ${BACKUP_JOBS}; do
         else
           schema="public"
         fi
-        backup_opts="${backup_opts} --exclude-table-data='\"${schema}\".\"${table}\"'"
+        table_name=$(echo "${schema}.${table}" | sed -r -e 's/([^\*\?\.]+)/"\1"/g;')
+        backup_opts="${backup_opts} --exclude-table-data='${table_name}'"
       done
       backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dump -b -Fc -h ${db_host} -p ${db_port} ${backup_opts} ${db} 2>\"${job_error_file}.log\""
       backup_file="${BACKUP_PATH}/${db}.dump"
@@ -242,7 +244,7 @@ for job in ${BACKUP_JOBS}; do
       done
       if mysqldump --help 2>/dev/null | grep -q "ignore-table-data"; then
         for table in ${data_exclude_tables}; do
-          backup_opts="${backup_opts} --ignore-table-data='\"${db}.${table}\"'"
+          backup_opts="${backup_opts} --ignore-table-data=\"${db}.${table}\""
         done
       elif ! test -z "${data_exclude_tables}"; then
         data_exclude_tables="none, not supported by mysqldump"
