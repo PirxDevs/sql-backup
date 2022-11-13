@@ -37,6 +37,8 @@ if ! test -z "$@"; then
   BACKUP_JOBS="$@"
 fi
 
+set -f
+
 for job in ${BACKUP_JOBS}; do
   if test -f "${SCRIPT_DIR}/jobs/${job}.conf"; then
     db_type=""
