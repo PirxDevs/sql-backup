@@ -134,7 +134,7 @@ for job in ${BACKUP_JOBS}; do
   if [ "${db_type}" = "pgsql" ]; then
     if test -z "${databases}"; then
       backup_cmd="${POSTGRESQL_BIN_DIR}/pg_dumpall -g -h ${db_host} -p ${db_port} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
-      backup_file="${BACKUP_PATH}/pgsql_globals.gz"
+      backup_file="${BACKUP_PATH}/pgsql_globals.sql.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
         backup_file="${backup_file}.gpg"
@@ -252,7 +252,7 @@ for job in ${BACKUP_JOBS}; do
         data_exclude_tables="none, not supported by mysqldump"
       fi
       backup_cmd="mysqldump -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
-      backup_file="${BACKUP_PATH}/${db}.gz"
+      backup_file="${BACKUP_PATH}/${db}.sql.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
         backup_file="${backup_file}.gpg"
