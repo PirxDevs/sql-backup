@@ -246,10 +246,12 @@ for job in ${BACKUP_JOBS}; do
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
       eval "${container_command} ${backup_cmd}; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
+        rm -f "${backup_file}" 2>/dev/null
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
         db_fail=$((db_fail + 1))
       else
+        chmod 600 "${backup_file}" 2>/dev/null
         echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
@@ -261,9 +263,6 @@ for job in ${BACKUP_JOBS}; do
       fi
       if ! test -z "${data_exclude_tables}"; then
         echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
-      fi
-      if test -f "${backup_file}"; then
-        chmod 600 "${backup_file}"
       fi
     elif [ "${db_type}" = "mysql" ] || [ "${db_type}" = "mariadb" ]; then
       if [ "${db_type}" = "mysql" ]; then
@@ -292,10 +291,12 @@ for job in ${BACKUP_JOBS}; do
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
       eval "${container_command} ${backup_cmd}; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
+        rm -f "${backup_file}" 2>/dev/null
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
         db_fail=$((db_fail + 1))
       else
+        chmod 600 "${backup_file}" 2>/dev/null
         echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
@@ -307,9 +308,6 @@ for job in ${BACKUP_JOBS}; do
       fi
       if ! test -z "${data_exclude_tables}"; then
         echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
-      fi
-      if test -f "${backup_file}"; then
-        chmod 600 "${backup_file}"
       fi
     elif [ "${db_type}" = "mongodb" ]; then
       for table in ${exclude_tables}; do
@@ -326,18 +324,17 @@ for job in ${BACKUP_JOBS}; do
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
       eval "${container_command} ${backup_cmd}; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
+        rm -f "${backup_file}" 2>/dev/null
         echo "FAILED" | tee -a "${job_log_file}"
         cat "${job_error_file}.log" | tee -a "${job_log_file}"
         db_fail=$((db_fail + 1))
       else
+        chmod 600 "${backup_file}" 2>/dev/null
         echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
         db_ok=$((db_ok + 1))
       fi
       if ! test -z "${exclude_tables}"; then
         echo "    Skipped collections: ${exclude_tables} " | tee -a "${job_log_file}"
-      fi
-      if test -f "${backup_file}"; then
-        chmod 600 "${backup_file}"
       fi
     fi
   done
