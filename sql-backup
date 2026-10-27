@@ -127,16 +127,9 @@ for job in ${BACKUP_JOBS}; do
       tls_opts="--tls --tlsAllowInvalidCertificates"
       dump_tls_opts="--ssl --sslAllowInvalidCertificates"
       eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" ${tls_opts} --eval 'db.adminCommand({ping: 1})' 1>/dev/null 2>&1; rc=\${PIPESTATUS[0]}"
-      if [ ${rc} -ne 0 ]; then
-        echo "  Error connecting to database" | tee -a "${job_log_file}"
-        rm -f "${job_error_file}" "${job_dblist_file}"
-        job_status="FAILED"
-        send_email
-        continue
-      fi
     fi
     if test -z "${databases}"; then
-      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" ${tls_opts} --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
+      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" ${tls_opts} --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' 2>\"${job_error_file}\" | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -156,7 +149,7 @@ for job in ${BACKUP_JOBS}; do
     send_email
     continue
   fi
-  rm -f "${job_error_file}"
+  rm -f "${job_error_file}" 2>/dev/null
   BACKUP_PATH="${BACKUP_ROOT_DIR}/${job}/${BACKUP_DATE}"
   if ! test -d "${BACKUP_PATH}"; then
     install -m 700 -d "${BACKUP_PATH}"
@@ -359,5 +352,5 @@ for job in ${BACKUP_JOBS}; do
     job_status="FAILED (${db_fail} errors, ${db_ok} ok)"
   fi
   send_email
-  rm -f "${job_dblist_file}" "${job_error_file}.log"
+  rm -f "${job_dblist_file}" "${job_error_file}.log" 2>/dev/null
 done
