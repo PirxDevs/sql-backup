@@ -95,10 +95,11 @@ for job in ${BACKUP_JOBS}; do
       done
     fi
   elif [ "${db_type}" = "mysql" ] || [ "${db_type}" = "mariadb" ]; then
-    echo "  Server type: MySQL/MariaDB" | tee -a "${job_log_file}"
     if [ "${db_type}" = "mysql" ]; then
+      echo "  Server type: MySQL" | tee -a "${job_log_file}"
       sql_command="mysql"
     elif [ "${db_type}" = "mariadb" ]; then
+      echo "  Server type: MariaDB" | tee -a "${job_log_file}"
       sql_command="mariadb"
     fi
     export MYSQL_PWD="${db_password}"
