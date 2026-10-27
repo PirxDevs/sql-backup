@@ -120,8 +120,23 @@ for job in ${BACKUP_JOBS}; do
     fi
   elif [ "${db_type}" = "mongodb" ]; then
     echo "  Server type: MongoDB" | tee -a "${job_log_file}"
+    tls_opts=""
+    dump_tls_opts=""
+    eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" --eval 'db.adminCommand({ping: 1})' 1>/dev/null 2>&1; rc=\${PIPESTATUS[0]}"
+    if [ ${rc} -ne 0 ]; then
+      tls_opts="--tls --tlsAllowInvalidCertificates"
+      dump_tls_opts="--ssl --sslAllowInvalidCertificates"
+      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" ${tls_opts} --eval 'db.adminCommand({ping: 1})' 1>/dev/null 2>&1; rc=\${PIPESTATUS[0]}"
+      if [ ${rc} -ne 0 ]; then
+        echo "  Error connecting to database" | tee -a "${job_log_file}"
+        rm -f "${job_error_file}" "${job_dblist_file}"
+        job_status="FAILED"
+        send_email
+        continue
+      fi
+    fi
     if test -z "${databases}"; then
-      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
+      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" ${tls_opts} --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -313,7 +328,7 @@ for job in ${BACKUP_JOBS}; do
       for table in ${exclude_tables}; do
         backup_opts="${backup_opts} --excludeCollection=\"${table}\""
       done
-      backup_cmd="mongodump --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" -d \"${db}\" ${backup_opts} --archive 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      backup_cmd="mongodump --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" -d \"${db}\" ${backup_opts} ${dump_tls_opts} --archive 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.archive.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
