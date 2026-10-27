@@ -279,7 +279,7 @@ for job in ${BACKUP_JOBS}; do
           backup_opts="${backup_opts} --ignore-table-data=\"${db}.${table}\""
         done
       elif ! test -z "${data_exclude_tables}"; then
-        data_exclude_tables="none, not supported by mysqldump"
+        data_exclude_tables="none, not supported by ${sql_dump_command}"
       fi
       backup_cmd="${sql_dump_command} -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.sql.gz"
