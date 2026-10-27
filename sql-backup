@@ -60,6 +60,7 @@ for job in ${BACKUP_JOBS}; do
     report_emails=""
     gpg_password=""
     curl_options=""
+    container_command=""
     . "${SCRIPT_DIR}/jobs/${job}.conf"
   else
     echo "Configuration for job \"${job}\" not found or not readable, skipping"
