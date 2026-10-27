@@ -104,7 +104,7 @@ for job in ${BACKUP_JOBS}; do
     fi
     export MYSQL_PWD="${db_password}"
     if test -z "${databases}"; then
-      eval "${container_command} ${sql_command} -u \"${db_user}\" -h ${db_host} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
+      eval "${container_command} ${sql_command} -u \"${db_user}\" -h ${db_host} -P ${db_port} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -121,7 +121,7 @@ for job in ${BACKUP_JOBS}; do
   elif [ "${db_type}" = "mongodb" ]; then
     echo "  Server type: MongoDB" | tee -a "${job_log_file}"
     if test -z "${databases}"; then
-      eval "${container_command} mongosh --quiet -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
+      eval "${container_command} mongosh --quiet --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\"; rc=\${PIPESTATUS[0]}"
       if [ ${rc} -ne 0 ]; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -280,7 +280,7 @@ for job in ${BACKUP_JOBS}; do
       elif ! test -z "${data_exclude_tables}"; then
         data_exclude_tables="none, not supported by ${sql_dump_command}"
       fi
-      backup_cmd="${sql_dump_command} -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      backup_cmd="${sql_dump_command} -u \"${db_user}\" -h ${db_host} -P ${db_port} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.sql.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
@@ -313,7 +313,7 @@ for job in ${BACKUP_JOBS}; do
       for table in ${exclude_tables}; do
         backup_opts="${backup_opts} --excludeCollection=\"${table}\""
       done
-      backup_cmd="mongodump -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" -d \"${db}\" ${backup_opts} --archive 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      backup_cmd="mongodump --host=${db_host} --port=${db_port} -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" -d \"${db}\" ${backup_opts} --archive 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.archive.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
