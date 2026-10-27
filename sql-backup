@@ -47,6 +47,7 @@ for job in ${BACKUP_JOBS}; do
     db_port=""
     db_user=""
     db_password=""
+    db_auth=""
     smtp_host=""
     smtp_port=""
     smtp_user=""
@@ -103,6 +104,23 @@ for job in ${BACKUP_JOBS}; do
     export MYSQL_PWD="${db_password}"
     if test -z "${databases}"; then
       eval "${container_command} ${sql_command} -u \"${db_user}\" -h ${db_host} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\""
+      if test -s "${job_error_file}"; then
+        echo "  Error reading list of databases" | tee -a "${job_log_file}"
+        cat "${job_error_file}" | tee -a "${job_log_file}"
+        rm -f "${job_error_file}" "${job_dblist_file}"
+        job_status="FAILED"
+        send_email
+        continue
+      fi
+    else
+      for db in "${databases}"; do
+        echo "${db}" >>"${job_dblist_file}"
+      done
+    fi
+  elif [ "${db_type}" = "mongodb" ]; then
+    echo "  Server type: MongoDB" | tee -a "${job_log_file}"
+    if test -z "${databases}"; then
+      eval "${container_command} mongosh --quiet -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" --eval 'db.adminCommand({listDatabases:1,nameOnly:true}).databases.forEach(d => print(d.name))' | grep -Ev \"^(config|local)$\" 1>\"${job_dblist_file}\""
       if test -s "${job_error_file}"; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -291,6 +309,28 @@ for job in ${BACKUP_JOBS}; do
       fi
       if ! test -z "${data_exclude_tables}"; then
         echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
+      fi
+    elif [ "${db_type}" = "mongodb" ]; then
+      backup_cmd="mongodump --quiet -u \"${db_user}\" -p \"${db_password}\" --authenticationDatabase \"${db_auth}\" -d \"${db}\" --archive 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      backup_file="${BACKUP_PATH}/${db}.archive.gz"
+      if ! test -z "${gpg_password}"; then
+        backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
+        backup_file="${backup_file}.gpg"
+      fi
+      backup_cmd="${backup_cmd} > ${backup_file}"
+      backup_file_name=$(basename "${backup_file}")
+      echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
+      eval "${container_command} ${backup_cmd}"
+      if test -f "${backup_file}"; then
+        chmod 600 "${backup_file}"
+      fi
+      if test -s "${job_error_file}.log"; then
+        echo "FAILED" | tee -a "${job_log_file}"
+        cat "${job_error_file}.log" | tee -a "${job_log_file}"
+        db_fail=$((db_fail + 1))
+      else
+        echo "OK (size $(du -h "${backup_file}" 2>&1 | awk -F" " '{print $1}'))" | tee -a "${job_log_file}"
+        db_ok=$((db_ok + 1))
       fi
     fi
   done
