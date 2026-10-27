@@ -78,7 +78,7 @@ for job in ${BACKUP_JOBS}; do
     export PGPASSWORD="${db_password}"
     POSTGRESQL_BIN_DIR=$(echo "${POSTGRESQL_BIN_DIR}" | sed -e 's/%v/'${db_version}'/' 2>/dev/null)
     if test -z "${databases}"; then
-      ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c "select datname from pg_database;" template1 2>"${job_error_file}" | grep -v "template0" | sort | sed -e 's/^[ ]*//g' 1>"${job_dblist_file}"
+      eval "${container_command} ${POSTGRESQL_BIN_DIR}/psql -q -t -h ${db_host} -p ${db_port} -c \"select datname from pg_database;\" template1 2>\"${job_error_file}\" | grep -v \"template0\" | sort | sed -e 's/^[ ]*//g' 1>\"${job_dblist_file}\""
       if test -s "${job_error_file}"; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -96,7 +96,7 @@ for job in ${BACKUP_JOBS}; do
     echo "  Server type: MySQL ${db_version}" | tee -a "${job_log_file}"
     export MYSQL_PWD="${db_password}"
     if test -z "${databases}"; then
-      mysql -u "${db_user}" -h ${db_host} -e "show databases;" 2>"${job_error_file}" | grep -Ev "(Database|information_schema|performance_schema)" 1>"${job_dblist_file}"
+      eval "${container_command} mysql -u \"${db_user}\" -h ${db_host} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\""
       if test -s "${job_error_file}"; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -142,7 +142,7 @@ for job in ${BACKUP_JOBS}; do
       backup_cmd="${backup_cmd} > ${backup_file}"
       backup_file_name=$(basename "${backup_file}")
       echo -n "  PostgreSQL globals -> ${backup_file_name} " | tee -a "${job_log_file}"
-      eval "${backup_cmd}"
+      eval "${container_command} ${backup_cmd}"
       if test -f "${backup_file}"; then
         chmod 600 "${backup_file}"
       fi
@@ -219,7 +219,7 @@ for job in ${BACKUP_JOBS}; do
       backup_cmd="${backup_cmd} > ${backup_file}"
       backup_file_name=$(basename "${backup_file}")
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
-      eval "${backup_cmd}"
+      eval "${container_command} ${backup_cmd}"
       if test -f "${backup_file}"; then
         chmod 600 "${backup_file}"
       fi
@@ -260,7 +260,7 @@ for job in ${BACKUP_JOBS}; do
       backup_cmd="${backup_cmd} > ${backup_file}"
       backup_file_name=$(basename "${backup_file}")
       echo -n "  Database ${db} -> ${backup_file_name} " | tee -a "${job_log_file}"
-      eval "${backup_cmd}"
+      eval "${container_command} ${backup_cmd}"
       if test -f "${backup_file}"; then
         chmod 600 "${backup_file}"
       fi
