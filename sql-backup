@@ -92,11 +92,16 @@ for job in ${BACKUP_JOBS}; do
         echo "${db}" >>"${job_dblist_file}"
       done
     fi
-  elif [ "${db_type}" = "mysql" ]; then
-    echo "  Server type: MySQL ${db_version}" | tee -a "${job_log_file}"
+  elif [ "${db_type}" = "mysql" ] || [ "${db_type}" = "mariadb" ]; then
+    echo "  Server type: MySQL/MariaDB" | tee -a "${job_log_file}"
+    if [ "${db_type}" = "mysql" ]; then
+      sql_command="mysql"
+    elif [ "${db_type}" = "mariadb" ]; then
+      sql_command="mariadb"
+    fi
     export MYSQL_PWD="${db_password}"
     if test -z "${databases}"; then
-      eval "${container_command} mysql -u \"${db_user}\" -h ${db_host} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\""
+      eval "${container_command} ${sql_command} -u \"${db_user}\" -h ${db_host} -e \"show databases;\" 2>\"${job_error_file}\" | grep -Ev \"(Database|information_schema|performance_schema)\" 1>\"${job_dblist_file}\""
       if test -s "${job_error_file}"; then
         echo "  Error reading list of databases" | tee -a "${job_log_file}"
         cat "${job_error_file}" | tee -a "${job_log_file}"
@@ -240,18 +245,23 @@ for job in ${BACKUP_JOBS}; do
       if ! test -z "${data_exclude_tables}"; then
         echo "    Skipped data: ${data_exclude_tables} " | tee -a "${job_log_file}"
       fi
-    elif [ "${db_type}" = "mysql" ]; then
+    elif [ "${db_type}" = "mysql" ] || [ "${db_type}" = "mariadb" ]; then
+      if [ "${db_type}" = "mysql" ]; then
+        sql_dump_command="mysqldump"
+      elif [ "${db_type}" = "mariadb" ]; then
+        sql_dump_command="mariadb-dump"
+      fi
       for table in ${exclude_tables}; do
         backup_opts="${backup_opts} --ignore-table=\"${db}.${table}\""
       done
-      if mysqldump --help 2>/dev/null | grep -q "ignore-table-data"; then
+      if ${sql_dump_command} --help 2>/dev/null | grep -q "ignore-table-data"; then
         for table in ${data_exclude_tables}; do
           backup_opts="${backup_opts} --ignore-table-data=\"${db}.${table}\""
         done
       elif ! test -z "${data_exclude_tables}"; then
         data_exclude_tables="none, not supported by mysqldump"
       fi
-      backup_cmd="mysqldump -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
+      backup_cmd="${sql_dump_command} -u \"${db_user}\" -h ${db_host} -c --hex-blob --single-transaction --add-drop-database ${backup_opts} --databases ${db} 2>\"${job_error_file}.log\" | gzip 2>/dev/null"
       backup_file="${BACKUP_PATH}/${db}.sql.gz"
       if ! test -z "${gpg_password}"; then
         backup_cmd="${backup_cmd} | gpg -c --batch --no-tty --yes --passphrase ${gpg_password} 2>/dev/null"
