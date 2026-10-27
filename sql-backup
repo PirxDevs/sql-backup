@@ -254,7 +254,7 @@ for job in ${BACKUP_JOBS}; do
       for table in ${exclude_tables}; do
         backup_opts="${backup_opts} --ignore-table=\"${db}.${table}\""
       done
-      if ${sql_dump_command} --help 2>/dev/null | grep -q "ignore-table-data"; then
+      if ${container_command} ${sql_dump_command} --help 2>/dev/null | grep -q "ignore-table-data"; then
         for table in ${data_exclude_tables}; do
           backup_opts="${backup_opts} --ignore-table-data=\"${db}.${table}\""
         done
